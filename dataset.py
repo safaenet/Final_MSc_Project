@@ -17,9 +17,13 @@ class ShapesDataset(torch.utils.data.Dataset):
         for idx, class_name in enumerate(class_folders):
             self.label_to_index[class_name] = idx
             class_path = os.path.join(root_dir, class_name)
-            for img_path in glob.glob(os.path.join(class_path, '*.png')):
-                for scale in self.scale_list:
-                    self.data.append((img_path, idx, scale))
+            # for img_path in glob.glob(os.path.join(class_path, '*.png')):
+            #     for scale in self.scale_list:
+            #         self.data.append((img_path, idx, scale))
+            for ext in ('*.png', '*.jpg', '*.jpeg'):
+                for img_path in glob.glob(os.path.join(class_path, ext)):
+                    for scale in self.scale_list:
+                        self.data.append((img_path, idx, scale))
 
     def __len__(self):
         return len(self.data)
