@@ -110,7 +110,7 @@ if __name__ == "__main__":
     model = ConvNet().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     data_root = "images/train-images"
-    classes = ["apple", "circle"]
+    classes = ["apple", "kiwi"]
     train_prototypical(model, optimizer, data_root, classes, device)
     # Save model at end of training
     torch.save(model.state_dict(), "saved_models/protonet_class_independent.pth")
