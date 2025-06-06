@@ -109,7 +109,7 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = ConvNet().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
-    data_root = "images/train-images"
+    data_root = "images/augmented-images"
     classes = ["apple", "kiwi"]
     train_prototypical(model, optimizer, data_root, classes, device)
     # Save model at end of training
