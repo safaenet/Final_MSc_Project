@@ -50,23 +50,6 @@ In human-robot collaboration (HRC) environments like smart homes or factories, i
 └── requirements.txt          # Python dependencies
 ```
 
----
-
-## 🚀 Getting Started
-
-### 1. Clone the Repository
-```bash
-git clone https://github.com/safaenet/Final_MSc_Project.git
-cd Final_MSc_Project
-```
-
-### 2. Install Requirements
-```bash
-pip install -r requirements.txt
-```
-
-### 3. Run the Notebook
-Open and run the main Jupyter notebook inside the `notebooks/` folder to train the model and simulate G-code generation.
 
 ---
 
@@ -114,3 +97,8 @@ For questions or collaborations:
 📧 safa.dh@gmail.com  
 📞 +44 7777 941862  
 🔗 [LinkedIn](https://www.linkedin.com/in/safa-dana)
+
+
+---
+
+*This README was generated with the assistance of ChatGPT.*
