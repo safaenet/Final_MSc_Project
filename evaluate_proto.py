@@ -1,101 +1,111 @@
+import os
+import cv2
+import pandas as pd
+import numpy as np
+from sklearn.metrics import classification_report
+from detect_object_multiscale import detect_object_multiscale
 import torch
 from torchvision import transforms
-from sklearn.metrics import precision_score, recall_score, f1_score, accuracy_score
-from learn2learn.data import MetaDataset, TaskDataset
-from learn2learn.data.transforms import NWays, KShots, LoadData, RemapLabels
-from dataset import ShapesDataset  # your custom dataset
-from prototypical_net import ConvNet  # your model class
+from prototypical_net import ConvNet
+from PIL import Image
+import random
 
 # --- Setup ---
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-test_root = "images/augmented-images"
-model_path = "saved_models/normal_model.pth"
-n_ways = 2
-k_shot = 1
-k_query = 5
-episodes = 50
+patch_sizes = [84, 96, 112, 128]
+stride = 20
+class_list = ["apple", "kiwi", "carrot"]
+workspace_dir = "images/workspace-images"
+ground_truth_dir = "images/ground-truth-csv"
+distance_threshold = 30
 
-# --- Dataset ---
-transform = transforms.Compose([
-    transforms.ToTensor(),
-    transforms.Normalize([0.5]*3, [0.5]*3)
-])
-dataset = ShapesDataset(test_root, transform=transform)
-meta_dataset = MetaDataset(dataset)
-
-taskset = TaskDataset(
-    meta_dataset,
-    task_transforms=[
-        NWays(meta_dataset, n=n_ways),
-        KShots(meta_dataset, k=k_shot + k_query),
-        LoadData(meta_dataset),
-        RemapLabels(meta_dataset),
-    ],
-    num_tasks=episodes,
-)
-
-# --- Load Model ---
+# --- Load model ---
 model = ConvNet().to(device)
-model.load_state_dict(torch.load(model_path, map_location=device))
+model.load_state_dict(torch.load("saved_models/prototypical_net_model.pth", map_location=device))
 model.eval()
 
-# --- Evaluation Loop ---
-accuracies, precisions, recalls, f1s = [], [], [], []
+# --- Define transform ---
+transform = transforms.Compose([
+    transforms.Resize((100, 100)),
+    transforms.ToTensor(),
+    transforms.Normalize([0.5]*3, [0.5]*3),
+])
 
-for task in taskset:
-    data, labels = task
-    data, labels = data.to(device), labels.to(device)
+all_true = []
+all_pred = []
 
-    support_data = []
-    support_labels = []
-    query_data = []
-    query_labels = []
+# --- Evaluate across images and classes ---
+for img_file in os.listdir(workspace_dir):
+    if not img_file.lower().endswith((".png", ".jpg", ".jpeg")):
+        continue
 
-    for class_idx in range(n_ways):
-        class_mask = labels == class_idx
-        class_indices = torch.nonzero(class_mask).squeeze()
-        support_idx = class_indices[:k_shot]
-        query_idx = class_indices[k_shot:k_shot + k_query]
+    image_path = os.path.join(workspace_dir, img_file)
+    gt_csv_path = os.path.join(ground_truth_dir, os.path.splitext(img_file)[0] + ".csv")
 
-        support_data.append(data[support_idx])
-        support_labels.append(labels[support_idx])
-        query_data.append(data[query_idx])
-        query_labels.append(labels[query_idx])
+    if not os.path.exists(gt_csv_path):
+        print(f"[!] Ground truth missing for {img_file}, skipping.")
+        continue
 
-    support_data = torch.cat(support_data, dim=0)
-    support_labels = torch.cat(support_labels, dim=0)
-    query_data = torch.cat(query_data, dim=0)
-    query_labels = torch.cat(query_labels, dim=0)
+    workspace = cv2.imread(image_path)
+    workspace = cv2.cvtColor(workspace, cv2.COLOR_BGR2RGB)
+    gt_df = pd.read_csv(gt_csv_path)
 
-    # Get embeddings
-    embeddings = model(torch.cat([support_data, query_data], dim=0))
-    support_embeddings = embeddings[:len(support_data)]
-    query_embeddings = embeddings[len(support_data):]
+    for class_name in class_list:
+        support_dir = os.path.join("images/support-images-augmented", class_name)
+        support_paths = [
+            os.path.join(support_dir, f)
+            for f in os.listdir(support_dir)
+            if f.lower().endswith((".png", ".jpg", ".jpeg"))
+        ]
+        if len(support_paths) == 0:
+            continue
 
-    # Compute prototypes
-    prototypes = []
-    for i in range(n_ways):
-        cls_mask = support_labels == i
-        cls_embeds = support_embeddings[cls_mask]
-        proto = cls_embeds.mean(dim=0)
-        prototypes.append(proto)
-    prototypes = torch.stack(prototypes)
+        selected_paths = random.sample(support_paths, k=min(10, len(support_paths)))
 
-    # Classify query samples
-    dists = torch.cdist(query_embeddings, prototypes)
-    preds = torch.argmin(dists, dim=1)
+        embeddings = []
+        for path in selected_paths:
+            img = Image.open(path).convert("RGB")
+            tensor = transform(img).unsqueeze(0).to(device)
+            with torch.no_grad():
+                emb = model(tensor)
+                embeddings.append(emb)
+        support_embedding = torch.mean(torch.stack(embeddings), dim=0)
 
-    # Metrics
-    y_true = query_labels.cpu().numpy()
-    y_pred = preds.cpu().numpy()
-    accuracies.append(accuracy_score(y_true, y_pred))
-    precisions.append(precision_score(y_true, y_pred, average='macro', zero_division=0))
-    recalls.append(recall_score(y_true, y_pred, average='macro', zero_division=0))
-    f1s.append(f1_score(y_true, y_pred, average='macro', zero_division=0))
+        detected_list = detect_object_multiscale(
+            model=model,
+            support_path_list=selected_paths,
+            workspace_path=image_path,
+            patch_sizes=patch_sizes,
+            stride=stride,
+            device=device,
+            distance=4
+        )
 
-# --- Results ---
-print("\n=== 2-Way {}-Shot Evaluation over {} Episodes ===".format(k_shot, episodes))
-print("Accuracy:  {:.2f}%".format(100 * sum(accuracies) / episodes))
-print("Precision: {:.2f}%".format(100 * sum(precisions) / episodes))
-print("Recall:    {:.2f}%".format(100 * sum(recalls) / episodes))
-print("F1-Score:  {:.2f}%".format(100 * sum(f1s) / episodes))
+        pred_points = [d['location'] for d in detected_list]
+        gt_points = gt_df[gt_df['class'] == class_name][['x', 'y']].values.tolist()
+        matched = set()
+
+        for gx, gy in gt_points:
+            found = False
+            for i, (px, py) in enumerate(pred_points):
+                if i in matched:
+                    continue
+                dist = np.sqrt((px - gx) ** 2 + (py - gy) ** 2)
+                if dist < distance_threshold:
+                    all_true.append(class_name)
+                    all_pred.append(class_name)
+                    matched.add(i)
+                    found = True
+                    break
+            if not found:
+                all_true.append(class_name)
+                all_pred.append("none")
+
+        for i in range(len(pred_points)):
+            if i not in matched:
+                all_true.append("none")
+                all_pred.append(class_name)
+
+# --- Final Report ---
+print("\n=== Final Evaluation Across All Classes ===")
+print(classification_report(all_true, all_pred, zero_division=0))

@@ -4,9 +4,9 @@
 # from PIL import Image
 
 # # Parameters
-# fruit_root = "images/train-images/carrot"
+# fruit_root = "images/train-images"
 # background_dir = "images/backgrounds"
-# output_root = "images/train-images-augmented/carrot"
+# output_root = "images/train-images-augmented"
 # num_per_image = 3  # Generate 3 augmented images per fruit image
 
 # # Load backgrounds once
@@ -42,7 +42,7 @@
 #             out_path = os.path.join(class_output_dir, f"{base_name}_{i}.jpg")
 #             bg.convert("RGB").save(out_path, quality=90)
 
-# Augmentation code to generate augmented images of of onespecific class.
+# Augmentation code to generate augmented images of of one specific class.
 import os
 import random
 from PIL import Image
